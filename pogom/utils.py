@@ -104,9 +104,9 @@ def get_args():
     parser.add_argument('-os', '--only-server',
                         help='Server-Only Mode. Starts only the Webserver without the searcher.',
                         action='store_true', default=False)
-    parser.add_argument('-nsc', '--no-search-control',
-                        help='Disables search control',
-                        action='store_false', dest='search_control', default=True)
+    parser.add_argument('-su', '--single-user-control',
+                        help='Enables controlling search params for individual use',
+                        action='store_true', dest='single_user_control', default=False)
     parser.add_argument('-fl', '--fixed-location',
                         help='Hides the search bar for use in shared maps.',
                         action='store_true', default=False)
@@ -341,11 +341,11 @@ def get_args():
 
         # Decide which scanning mode to use
         if args.spawnpoint_scanning:
-            args.scheduler = 'SpawnScan'
+            config['SCHEDULER'] = 'SpawnScan'
         elif args.spawnpoints_only:
-            args.scheduler = 'HexSearchSpawnpoint'
+            config['SCHEDULER'] = 'HexSearchSpawnpoint'
         else:
-            args.scheduler = 'HexSearch'
+            config['SCHEDULER'] = 'HexSearch'
 
     return args
 

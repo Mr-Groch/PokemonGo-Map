@@ -37,6 +37,7 @@ from pgoapi.exceptions import AuthException
 from .models import parse_map, GymDetails, parse_gyms, MainWorker, WorkerStatus
 from .fakePogoApi import FakePogoApi
 from .utils import now
+from . import config
 import schedulers
 
 import terminalsize
@@ -274,7 +275,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, encryption_lib_p
     threadStatus['Overseer'] = {
         'message': 'Initializing',
         'type': 'Overseer',
-        'scheduler': args.scheduler
+        'scheduler': config['SCHEDULER']
     }
 
     if(args.print_status):
@@ -340,7 +341,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, encryption_lib_p
     current_location = False
 
     # Create the appropriate type of scheduler to handle the search queue.
-    scheduler = schedulers.SchedulerFactory.get_scheduler(args.scheduler, [search_items_queue], threadStatus, args)
+    scheduler = schedulers.SchedulerFactory.get_scheduler(config['SCHEDULER'], [search_items_queue], threadStatus, args)
 
     # The real work starts here but will halt on pause_bit.set()
     while True:
@@ -358,6 +359,13 @@ def search_overseer_thread(args, new_location_queue, pause_bit, encryption_lib_p
                     current_location = new_location_queue.get_nowait()
             except Empty:
                 pass
+            scheduler.location_changed(current_location)
+
+        # Look for scheduler change
+        if config['SCHEDULER'] != threadStatus['Overseer']['scheduler']:
+            log.info('Switching current scheduler to: %s', config['SCHEDULER'])
+            threadStatus['Overseer']['scheduler'] = config['SCHEDULER']
+            scheduler = schedulers.SchedulerFactory.get_scheduler(config['SCHEDULER'], [search_items_queue], threadStatus, args)
             scheduler.location_changed(current_location)
 
         # If there are no search_items_queue either the loop has finished (or been
