@@ -15,7 +15,7 @@ from collections import OrderedDict
 
 from . import config
 from .models import Pokemon, Gym, Pokestop, ScannedLocation, MainWorker, WorkerStatus
-
+from .utils import now
 log = logging.getLogger(__name__)
 compress = Compress()
 
@@ -43,6 +43,9 @@ class Pogom(Flask):
     def set_search_control(self, control):
         self.search_control = control
 
+    def set_heartbeat_control(self, heartb):
+        self.heartbeat = heartb
+
     def set_location_queue(self, queue):
         self.location_queue = queue
 
@@ -54,7 +57,7 @@ class Pogom(Flask):
 
     def post_search_control(self):
         args = get_args()
-        if not args.single_user_control:
+        if not args.single_user_control or args.on_demand_timeout > 0:
             return 'Search control is disabled', 403
         action = request.args.get('action', 'none')
         if action == 'on':
@@ -105,9 +108,12 @@ class Pogom(Flask):
         return self.get_search_mode()
 
     def fullmap(self):
+        self.heartbeat[0] = now()
         args = get_args()
+        if args.on_demand_timeout > 0:
+            self.search_control.clear()
         fixed_display = "none" if args.fixed_location else "inline"
-        su_control_display = "inline" if args.single_user_control else "none"
+        su_control_display = "inline" if args.single_user_control and args.on_demand_timeout <= 0 else "none"
 
         return render_template('map.html',
                                lat=self.current_location[0],
@@ -119,6 +125,10 @@ class Pogom(Flask):
                                )
 
     def raw_data(self):
+        self.heartbeat[0] = now()
+        args = get_args()
+        if args.on_demand_timeout > 0:
+            self.search_control.clear()
         d = {}
         swLat = request.args.get('swLat')
         swLng = request.args.get('swLng')
