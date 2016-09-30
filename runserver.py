@@ -184,6 +184,8 @@ def main():
         log.info('Parsing of Pokestops disabled')
     if args.no_gyms:
         log.info('Parsing of Gyms disabled')
+    if args.encounter:
+        log.info('Encountering pokemon enabled')
 
     config['STEP_LIMIT'] = args.step_limit
     config['LOCALE'] = args.locale
