@@ -77,6 +77,14 @@ def get_args():
     parser.add_argument('-enc', '--encounter',
                         help='Start an encounter to gather IVs and moves',
                         action='store_true', default=False)
+    parser.add_argument('-cs', '--captcha-solving',
+                        help='Enables captcha solving',
+                        action='store_true', default=False)
+    parser.add_argument('-ck', '--captcha-key',
+                        help='2Captcha API key')
+    parser.add_argument('-cds', '--captcha-dsk',
+                        help='PokemonGo captcha data-sitekey',
+                        default="6LeeTScTAAAAADqvhqVMhPpr_vB9D364Ia-1dSgK")
     parser.add_argument('-ed', '--encounter-delay',
                         help='Time delay between encounter pokemon in scan threads',
                         type=float, default=1)
@@ -437,9 +445,9 @@ def get_encryption_lib_path(args):
         # win32 doesn't mean necessarily 32 bits
         if sys.platform == "win32" or sys.platform == "cygwin":
             if platform.architecture()[0] == '64bit':
-                lib_name = "encrypt64bit.dll"
+                lib_name = "encrypt64.dll"
             else:
-                lib_name = "encrypt32bit.dll"
+                lib_name = "encrypt32.dll"
 
         elif sys.platform == "darwin":
             lib_name = "libencrypt-osx-64.so"
@@ -470,7 +478,7 @@ def get_encryption_lib_path(args):
             log.error(err)
             raise Exception(err)
 
-        lib_path = os.path.join(os.path.dirname(__file__), "libencrypt", lib_name)
+        lib_path = os.path.join(os.path.dirname(__file__), "../pokecrypt-pgoapi", lib_name)
 
         if not os.path.isfile(lib_path):
             err = "Could not find {} encryption library {}".format(sys.platform, lib_path)
