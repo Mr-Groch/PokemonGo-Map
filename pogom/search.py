@@ -400,7 +400,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb, db_updat
         if config['SCHEDULER'] != threadStatus['Overseer']['scheduler']:
             log.info('Switching current scheduler to: %s', config['SCHEDULER'])
             threadStatus['Overseer']['scheduler'] = config['SCHEDULER']
-            locations = _generate_locations(current_location, step_distance, config['STEP_LIMIT'], len(scheduler_array)
+            locations = _generate_locations(current_location, step_distance, config['STEP_LIMIT'], len(scheduler_array))
             for i in range(0, len(scheduler_array)):
                 scheduler_array[i] = schedulers.SchedulerFactory.get_scheduler(config['SCHEDULER'], [search_items_queue], threadStatus, args)
                 scheduler_array[i].location_changed(locations[i])
