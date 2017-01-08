@@ -802,7 +802,7 @@ class SpeedScan(HexSearch):
         return best['step'], best['loc'], 0, 0, messages
 
     def task_done(self, status, parsed=False):
-        if parsed:
+        if parsed and len(self.queues[0]) > status['index_of_queue_item']:
             # Record delay between spawn time and scanning for statistics
             now_secs = date_secs(datetime.utcnow())
             item = self.queues[0][status['index_of_queue_item']]
