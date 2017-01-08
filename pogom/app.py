@@ -114,7 +114,8 @@ class Pogom(Flask):
         if args.on_demand_timeout > 0:
             self.search_control.clear()
         fixed_display = "none" if args.fixed_location else "inline"
-        su_control_display = "inline" if args.single_user_control and args.on_demand_timeout <= 0 else "none"
+        search_display = "inline" if args.on_demand_timeout <= 0 else "none"
+        su_control_display = "inline" if args.single_user_control else "none"
         scan_display = "none" if (args.only_server or args.fixed_location or args.spawnpoint_scanning) else "inline"
 
         map_lat = self.current_location[0]
@@ -129,6 +130,7 @@ class Pogom(Flask):
                                gmaps_key=config['GMAPS_KEY'],
                                lang=config['LOCALE'],
                                is_fixed=fixed_display,
+                               search_control=search_display,
                                su_control=su_control_display,
                                show_scan=scan_display
                                )
