@@ -355,6 +355,17 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb, db_updat
     # The real work starts here but will halt on pause_bit.set().
     while True:
 
+        # Look for scheduler change
+        if config['SCHEDULER'] != threadStatus['Overseer']['scheduler']:
+            log.info('Switching current scheduler to: %s', config['SCHEDULER'])
+            threadStatus['Overseer']['scheduler'] = config['SCHEDULER']
+            for i in range(0, len(scheduler_array)):
+                scheduler = schedulers.SchedulerFactory.get_scheduler(config['SCHEDULER'], [search_items_queue], threadStatus, args)
+                scheduler_array[i].new_scheduler = scheduler
+                scheduler_array[i] = scheduler
+            if new_location_queue.empty():
+                new_location_queue.put(current_location)
+
         if args.on_demand_timeout > 0 and (now() - args.on_demand_timeout) > heartb[0]:
             pause_bit.set()
             log.info("Searching paused due to inactivity...")
@@ -379,15 +390,6 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb, db_updat
             locations = generate_hive_locations(current_location, step_distance, config['STEP_LIMIT'], len(scheduler_array))
 
             for i in range(0, len(scheduler_array)):
-                scheduler_array[i].location_changed(locations[i], db_updates_queue)
-
-        # Look for scheduler change
-        if config['SCHEDULER'] != threadStatus['Overseer']['scheduler']:
-            log.info('Switching current scheduler to: %s', config['SCHEDULER'])
-            threadStatus['Overseer']['scheduler'] = config['SCHEDULER']
-            locations = generate_hive_locations(current_location, step_distance, config['STEP_LIMIT'], len(scheduler_array))
-            for i in range(0, len(scheduler_array)):
-                scheduler_array[i] = schedulers.SchedulerFactory.get_scheduler(config['SCHEDULER'], [search_items_queue], threadStatus, args)
                 scheduler_array[i].location_changed(locations[i], db_updates_queue)
 
         # If there are no search_items_queue either the loop has finished or it's been
@@ -531,6 +533,11 @@ def search_worker_thread(args, account_queue, account_failures, search_items_que
 
             # The forever loop for the searches.
             while True:
+
+                # Look for scheduler change
+                if scheduler.new_scheduler:
+                    scheduler = scheduler.new_scheduler
+                    break
 
                 while pause_bit.is_set():
                     status['message'] = 'Scanning paused.'

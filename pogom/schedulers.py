@@ -67,6 +67,7 @@ class BaseScheduler(object):
         self.scan_location = False
         self.size = None
         self.ready = False
+        self.new_scheduler = None
 
     # Schedule function fills the queues with data.
     def schedule(self):
