@@ -360,7 +360,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb, db_updat
             log.info('Switching current scheduler to: %s', config['SCHEDULER'])
             threadStatus['Overseer']['scheduler'] = config['SCHEDULER']
             for i in range(0, len(scheduler_array)):
-                scheduler = schedulers.SchedulerFactory.get_scheduler(config['SCHEDULER'], [search_items_queue], threadStatus, args)
+                scheduler = schedulers.SchedulerFactory.get_scheduler(config['SCHEDULER'], [search_items_queue_array[i]], threadStatus, args)
                 scheduler_array[i].new_scheduler = scheduler
                 scheduler_array[i] = scheduler
             if new_location_queue.empty():
