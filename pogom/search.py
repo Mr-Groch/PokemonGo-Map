@@ -41,7 +41,8 @@ from pgoapi.exceptions import AuthException
 
 from .models import parse_map, GymDetails, parse_gyms, MainWorker, WorkerStatus
 from .fakePogoApi import FakePogoApi
-from .utils import now, get_tutorial_state, complete_tutorial
+from .utils import (now, get_tutorial_state, complete_tutorial,
+                    generate_device_info)
 from .transform import get_new_coords
 from . import config
 import schedulers
@@ -554,18 +555,18 @@ def get_stats_message(threadStatus):
     if elapsed == 0:
         elapsed = 1
 
-    sph = overseer['success_total'] * 3600 / elapsed
-    fph = overseer['fail_total'] * 3600 / elapsed
-    eph = overseer['empty_total'] * 3600 / elapsed
-    skph = overseer['skip_total'] * 3600 / elapsed
-    cph = overseer['captcha_total'] * 3600 / elapsed
+    sph = overseer['success_total'] * 3600.0 / elapsed
+    fph = overseer['fail_total'] * 3600.0 / elapsed
+    eph = overseer['empty_total'] * 3600.0 / elapsed
+    skph = overseer['skip_total'] * 3600.0 / elapsed
+    cph = overseer['captcha_total'] * 3600.0 / elapsed
     ccost = cph * 0.00299
     cmonth = ccost * 730
 
-    message = ('Total active: {}  |  Success: {} ({}/hr) | ' +
-               'Fails: {} ({}/hr) | Empties: {} ({}/hr) | ' +
-               'Skips {} ({}/hr) | ' +
-               'Captchas: {} ({}/hr)|${:2}/hr|${:2}/mo').format(
+    message = ('Total active: {}  |  Success: {} ({:.1f}/hr) | ' +
+               'Fails: {} ({:.1f}/hr) | Empties: {} ({:.1f}/hr) | ' +
+               'Skips {} ({:.1f}/hr) | ' +
+               'Captchas: {} ({:.1f}/hr)|${:.5f}/hr|${:.3f}/mo').format(
                    overseer['active_accounts'],
                    overseer['success_total'], sph,
                    overseer['fail_total'], fph,
@@ -683,6 +684,10 @@ def search_worker_thread(args, account_queue, account_failures,
     # This reinitializes the API and grabs a new account from the queue.
     while True:
         try:
+            # Force storing of previous worker info to keep consistency
+            if 'starttime' in status:
+                dbq.put((WorkerStatus, {0: WorkerStatus.db_format(status)}))
+
             status['starttime'] = now()
 
             # Track per loop.
@@ -723,7 +728,8 @@ def search_worker_thread(args, account_queue, account_failures,
             if args.mock != '':
                 api = FakePogoApi(args.mock)
             else:
-                api = PGoApi()
+                device_info = generate_device_info()
+                api = PGoApi(device_info=device_info)
 
             # New account - new proxy.
             if args.proxy:
@@ -1111,9 +1117,9 @@ def search_worker_thread(args, account_queue, account_failures,
 
         # Catch any process exceptions, log them, and continue the thread.
         except Exception as e:
-            log.error(
+            log.error((
                 'Exception in search_worker under account {} Exception ' +
-                'message: {}.'.format(account['username'], repr(e)))
+                'message: {}.').format(account['username'], repr(e)))
             status['message'] = (
                 'Exception in search_worker using account {}. Restarting ' +
                 'with fresh account. See logs for details.').format(
