@@ -17,13 +17,14 @@ from peewee import InsertQuery, \
     OperationalError
 from playhouse.flask_utils import FlaskDB
 from playhouse.pool import PooledMySQLDatabase
-from playhouse.shortcuts import RetryOperationalError
+from playhouse.shortcuts import RetryOperationalError, case
 from playhouse.migrate import migrate, MySQLMigrator, SqliteMigrator
 from playhouse.sqlite_ext import SqliteExtDatabase
 from datetime import datetime, timedelta
 from base64 import b64encode
 from cachetools import TTLCache
 from cachetools import cached
+from timeit import default_timer
 
 from . import config
 from .utils import get_pokemon_name, get_pokemon_rarity, get_pokemon_types, \
@@ -37,7 +38,7 @@ args = get_args()
 flaskDb = FlaskDB()
 cache = TTLCache(maxsize=100, ttl=60 * 5)
 
-db_schema_version = 13
+db_schema_version = 14
 
 
 class MyRetryDB(RetryOperationalError, PooledMySQLDatabase):
@@ -101,6 +102,9 @@ class Pokemon(BaseModel):
     individual_stamina = IntegerField(null=True)
     move_1 = IntegerField(null=True)
     move_2 = IntegerField(null=True)
+    weight = DoubleField(null=True)
+    height = DoubleField(null=True)
+    gender = IntegerField(null=True)
     last_modified = DateTimeField(
         null=True, index=True, default=datetime.utcnow)
 
@@ -1022,14 +1026,14 @@ class ScannedLocation(BaseModel):
     @classmethod
     def get_bands_filled_by_cellids(cls, cellids):
         return int(cls
-                   .select(fn.SUM(fn.IF(cls.band1 == -1, 0, 1)
-                                  + fn.IF(cls.band2 == -1, 0, 1)
-                                  + fn.IF(cls.band3 == -1, 0, 1)
-                                  + fn.IF(cls.band4 == -1, 0, 1)
-                                  + fn.IF(cls.band5 == -1, 0, 1))
+                   .select(fn.SUM(case(cls.band1, ((-1, 0),), 1)
+                                  + case(cls.band2, ((-1, 0),), 1)
+                                  + case(cls.band3, ((-1, 0),), 1)
+                                  + case(cls.band4, ((-1, 0),), 1)
+                                  + case(cls.band5, ((-1, 0),), 1))
                            .alias('band_count'))
                    .where(cls.cellid << cellids)
-                   .scalar())
+                   .scalar() or 0)
 
     @classmethod
     def reset_bands(cls, scan_loc):
@@ -1867,7 +1871,10 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                 'individual_defense': None,
                 'individual_stamina': None,
                 'move_1': None,
-                'move_2': None
+                'move_2': None,
+                'height': None,
+                'weight': None,
+                'gender': None
             }
 
             if (encounter_result is not None and 'wild_pokemon'
@@ -1883,6 +1890,9 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                         'individual_stamina', 0),
                     'move_1': pokemon_info['move_1'],
                     'move_2': pokemon_info['move_2'],
+                    'height': pokemon_info['height_m'],
+                    'weight': pokemon_info['weight_kg'],
+                    'gender': pokemon_info['pokemon_display']['gender'],
                 })
 
             if args.webhooks:
@@ -2223,14 +2233,19 @@ def db_updater(args, q, db):
 
             # Loop the queue.
             while True:
+                last_upsert = default_timer()
                 model, data = q.get()
+
                 bulk_upsert(model, data, db)
                 q.task_done()
+
                 log.debug('Upserted to %s, %d records (upsert queue '
-                          'remaining: %d).',
+                          'remaining: %d) in %.2f seconds.',
                           model.__name__,
                           len(data),
-                          q.qsize())
+                          q.qsize(),
+                          default_timer() - last_upsert)
+
                 if q.qsize() > 50:
                     log.warning(
                         "DB queue is > 50 (@%d); try increasing --db-threads.",
@@ -2289,45 +2304,48 @@ def bulk_upsert(cls, data, db):
     i = 0
 
     if args.db_type == 'mysql':
-        step = 120
+        step = 250
     else:
         # SQLite has a default max number of parameters of 999,
         # so we need to limit how many rows we insert for it.
         step = 50
 
-    while i < num_rows:
-        log.debug('Inserting items %d to %d.', i, min(i + step, num_rows))
-        try:
-            # Turn off FOREIGN_KEY_CHECKS on MySQL, because it apparently is
-            # unable to recognize strings to update unicode keys for
-            # foriegn key fields, thus giving lots of foreign key constraint
-            # errors.
-            if args.db_type == 'mysql':
-                db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
+    with db.atomic():
+        while i < num_rows:
+            log.debug('Inserting items %d to %d.', i, min(i + step, num_rows))
+            try:
+                # Turn off FOREIGN_KEY_CHECKS on MySQL, because apparently it's
+                # unable to recognize strings to update unicode keys for
+                # foreign key fields, thus giving lots of foreign key
+                # constraint errors.
+                if args.db_type == 'mysql':
+                    db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
 
-            InsertQuery(cls, rows=data.values()[
-                        i:min(i + step, num_rows)]).upsert().execute()
+                # Use peewee's own implementation of the insert_many() method.
+                InsertQuery(cls, rows=data.values()[
+                            i:min(i + step, num_rows)]).upsert().execute()
 
-            if args.db_type == 'mysql':
-                db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
+                if args.db_type == 'mysql':
+                    db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
 
-        except Exception as e:
-            # If there is a DB table constraint error, dump the data and don't
-            # retry.
-            #
-            # Unrecoverable error strings:
-            unrecoverable = ['constraint', 'has no attribute',
-                             'peewee.IntegerField object at']
-            has_unrecoverable = filter(lambda x: x in str(e), unrecoverable)
-            if has_unrecoverable:
-                log.warning('%s. Data is:', repr(e))
-                log.warning(data.items())
-            else:
-                log.warning('%s... Retrying...', repr(e))
-                time.sleep(1)
-                continue
+            except Exception as e:
+                # If there is a DB table constraint error, dump the data and
+                # don't retry.
+                #
+                # Unrecoverable error strings:
+                unrecoverable = ['constraint', 'has no attribute',
+                                 'peewee.IntegerField object at']
+                has_unrecoverable = filter(
+                    lambda x: x in str(e), unrecoverable)
+                if has_unrecoverable:
+                    log.warning('%s. Data is:', repr(e))
+                    log.warning(data.items())
+                else:
+                    log.warning('%s... Retrying...', repr(e))
+                    time.sleep(1)
+                    continue
 
-        i += step
+            i += step
 
 
 def create_tables(db):
@@ -2468,3 +2486,13 @@ def database_migrate(db, old_ver):
 
         db.drop_tables([WorkerStatus])
         db.drop_tables([MainWorker])
+
+    if old_ver < 14:
+        migrate(
+            migrator.add_column('pokemon', 'weight',
+                                DoubleField(null=True, default=0)),
+            migrator.add_column('pokemon', 'height',
+                                DoubleField(null=True, default=0)),
+            migrator.add_column('pokemon', 'gender',
+                                IntegerField(null=True, default=0))
+        )
